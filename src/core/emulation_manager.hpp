@@ -69,6 +69,7 @@ public:
     BOOL execute_cpu_cycles(UINT32 nr_cycles);
     int reset_emulation_loop();
     int draw_visual_debug_information();
+    void set_ppu_render_debug_mode(PPU_DEBUG_MODE m) {ppu_render->set_debug_mode(m);};
     int dump_cpu_history(FILE *s);
 
     void set_debug_output(FILE *foutput){debug_output = foutput;};

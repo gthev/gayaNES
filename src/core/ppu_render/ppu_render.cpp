@@ -6,7 +6,7 @@
 #define BITSELECT8(val, pos) (((val) >> pos) & 0x01)
 
 PPU_Render::PPU_Render(sdl_context *sdl_ctx, PPU_mem *ppu_mem, PPU_state *ppu_state, cpu6502 *cpu) : sdl_ctx(sdl_ctx), ppu_mem(ppu_mem), ppu_state(ppu_state),
-        cpu(cpu), in_tile(0), tile(0)
+        cpu(cpu), in_tile(0), tile(0), debug_mode(PPU_DEBUG_MODE::NONE)
 {
     ppu_state->ticks = 0;
     ppu_state->scanline = 261;
@@ -265,13 +265,13 @@ void PPU_Render::step_visible() {
             break;
         case 5:
             // pt low
-            ppu_state->SPRITE_LOW_REG[sprite_idx] = sprite_fetch_pt(ppu_state->current_oame.tile_idx, ppu_state->SPRITE_FINE_Y);
+            ppu_state->SPRITE_LOW_REG[sprite_idx] = sprite_fetch_pt(ppu_state->current_oame.tile_idx, 0);
             if(ppu_state->current_oame.attr & 0x40) ppu_state->SPRITE_LOW_REG[sprite_idx] = reverse_byte(ppu_state->SPRITE_LOW_REG[sprite_idx]);
             break;
 
         case 7:
             //pt high
-            ppu_state->SPRITE_HIGH_REG[sprite_idx] = sprite_fetch_pt(ppu_state->current_oame.tile_idx, 8 + ppu_state->SPRITE_FINE_Y);
+            ppu_state->SPRITE_HIGH_REG[sprite_idx] = sprite_fetch_pt(ppu_state->current_oame.tile_idx, 8);
             if(ppu_state->current_oame.attr & 0x40) ppu_state->SPRITE_HIGH_REG[sprite_idx] = reverse_byte(ppu_state->SPRITE_HIGH_REG[sprite_idx]);
             break;
         default:
@@ -280,7 +280,6 @@ void PPU_Render::step_visible() {
     } else if(ppu_state->ticks <= 336) {
         step_two_first_tiles();
     }
-
 }
 
 void PPU_Render::compute_fine_Y_sprite() {
@@ -447,12 +446,17 @@ void PPU_Render::second_oam_eval_loop(UINT8 sprite) {
 UINT8 PPU_Render::sprite_fetch_pt(UINT8 tile_idx, UINT8 offset) {
     if(ppu_state->SPRITE_SIZE) {
         UINT8 nr_table = tile_idx & 0x01;
-        // tile_idx--; // useless
-        UINT8 real_idx = (tile_idx & 0xE0) + ((tile_idx & 0x1F) >> 1);
-        if(ppu_state->SPRITE_FINE_Y) real_idx += 0x10; // + 16
-        return ppu_mem->read_ppu_mem((real_idx << 4) + offset + (nr_table << 12));
+        // if(nr_table) tile_idx--; // useless
+        /* UINT8 real_idx = (tile_idx & 0xE0) + ((tile_idx & 0x1F) >> 1); */
+        UINT8 real_idx = (nr_table)? 256+tile_idx-1 : tile_idx;
+        UINT8 offset_y = ppu_state->SPRITE_FINE_Y;
+        if(offset_y >= 8) {
+            real_idx += 0x01; // look at the consecutive
+            offset_y -= 8;
+        }
+        return ppu_mem->read_ppu_mem((real_idx << 4) + offset + offset_y + (nr_table << 12));
     } else {
-        return ppu_mem->read_ppu_pt((tile_idx << 4) + offset + ((ppu_state->SPRITE_TABLE) << 12));
+        return ppu_mem->read_ppu_pt((tile_idx << 4) + offset + ppu_state->SPRITE_FINE_Y + ((ppu_state->SPRITE_TABLE) << 12));
     }
 }
 
@@ -500,22 +504,23 @@ void PPU_Render::sprite_fetches(UINT8 sprite) {
     if(ppu_state->NEXT_OAM_IDX <= sprite) return; // not actually loaded
 
     struct OAMentry oame = ppu_mem->secondary_oam[sprite];
-    int max_rev = (ppu_state->SPRITE_SIZE)? 15 : 7;
-    UINT8 fine_Y = (oame.attr & 0x80)? max_rev + oame.Y_off - ppu_state->scanline : ppu_state->scanline - oame.Y_off ; // do we flip vertically ?
     
-    ppu_state->SPRITE_LOW_REG[sprite] = sprite_fetch_pt(oame.tile_idx, fine_Y);
-    ppu_state->SPRITE_HIGH_REG[sprite] = sprite_fetch_pt(oame.tile_idx, fine_Y + 8);
+    compute_fine_Y_sprite();
+
+
+    ppu_state->SPRITE_PRIORITY[sprite] = !!(oame.attr & 0x20);
+    ppu_state->SPRITE_POS[sprite] = oame.X_off;
+    ppu_state->SPRITE_ACTIVE[sprite] = !(oame.X_off) * 8; // active if X offset is 0
+    ppu_state->SPRITE_ATTR[sprite] = oame.attr & 0x03;
+
+    ppu_state->SPRITE_LOW_REG[sprite] = sprite_fetch_pt(oame.tile_idx, 0);
+    ppu_state->SPRITE_HIGH_REG[sprite] = sprite_fetch_pt(oame.tile_idx, 8);
 
     if(oame.attr & 0x40) {
         // swap horizontally
         ppu_state->SPRITE_LOW_REG[sprite] = reverse_byte(ppu_state->SPRITE_LOW_REG[sprite]);
         ppu_state->SPRITE_HIGH_REG[sprite] = reverse_byte(ppu_state->SPRITE_HIGH_REG[sprite]);
     }
-
-    ppu_state->SPRITE_PRIORITY[sprite] = !!(oame.attr & 0x20);
-    ppu_state->SPRITE_POS[sprite] = oame.X_off;
-    ppu_state->SPRITE_ACTIVE[sprite] = !(oame.X_off) * 8; // active if X offset is 0
-    ppu_state->SPRITE_ATTR[sprite] = oame.attr & 0x03;
 }
 
 void PPU_Render::render() {
@@ -677,7 +682,9 @@ SDL_Window *PPU_Render::open_pattern_table_window() {
         return nullptr;
     }
 
-    pal[0] = 0x0F; pal[1] = 0x07; pal[2] = 0x27; pal[3] = 0x37;
+    for(int i=0; i<4; i++) {
+        pal[i] = ppu_mem->BACKGROUND_palette[0][i];
+    }
 
     surface = SDL_CreateRGBSurface(0, 32*8*b_size, 16*8*b_size, 32, 0, 0, 0, 0);
     if(!surface) {

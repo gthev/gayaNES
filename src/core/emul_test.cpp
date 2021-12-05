@@ -180,8 +180,11 @@ int main(int argc, char *argv[]) {
         }
         catch(const ExitedGame& e)
         {
+            // this is done to avoid endless "Window has stopped responding"
+            SDL_SetHint(SDL_HINT_VIDEO_X11_NET_WM_PING, "0");
             emul_manager->draw_visual_debug_information();
             if(args.cli_debug) emul_manager->enter_debug_cli();
+            
             break;
         }
         catch(const CPUHalted& e)

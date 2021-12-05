@@ -132,6 +132,7 @@ BOOL EmulationManager::execute_cpu_cycles(UINT32 nr_cycles) {
 int EmulationManager::reset_emulation_loop() {
     cpu->enter_reset();
     cpu->reset_cycles();
+    execute_cpu_cycles(30000);
     return 0;
 }
 
@@ -218,6 +219,9 @@ int EmulationManager::one_emulation_loop() {
 void EmulationManager::save_state() {
     std::printf("Saving state...");
     current_save_state.cpu = cpu->get_state();
+
+    std::printf(" pc->0x%02X\n", cpu->read_mem(current_save_state.cpu.regs.PC));
+
     current_save_state.ppu_render = ppu_render->ppu_render_save_state();
     if(current_save_state.cpu_mem) delete current_save_state.cpu_mem;
     current_save_state.cpu_mem = cpu_mem->save_state();
@@ -244,8 +248,11 @@ void EmulationManager::restore_state() {
     cpu_mem = current_save_state.cpu_mem->save_state();
     cpu_mem->memROM = rom_mem;
     cpu->restore_state(current_save_state.cpu);
+
     cpu->set_cpu_mem(cpu_mem);
     cpu_mem->cpu = cpu; // I think it's useless
+
+    std::printf(" pc->0x%02X\n", cpu->read_mem(current_save_state.cpu.regs.PC));
 
     delete ppu_state;
     ppu_state = ppu_state_save(*current_save_state.ppu_state);
@@ -273,8 +280,8 @@ int EmulationManager::draw_visual_debug_information() {
     std::printf("*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*\n");
     std::printf("DEBUG INFORMATION EMULATION MANAGER\n");
     std::printf("*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*\n");
-    ppu_render->set_debug_mode(PPU_DEBUG_MODE::BACKGROUND);
-    ppu_render->render();
+    ppu_render->set_debug_mode(PPU_DEBUG_MODE::SPRITE);
+    one_emulation_loop();
     ppu_render->draw_debug_tiles_grid(1);
     SDL_Window *tiles_window = ppu_render->open_pattern_table_window();
     SDL_Window *palettes_window = open_palette_window(ppu_mem->BACKGROUND_palette, ppu_mem->SPRITE_palette, 50);

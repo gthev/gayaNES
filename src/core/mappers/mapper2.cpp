@@ -29,12 +29,27 @@ ROMMapper2::ROMMapper2(struct nes_data *nesdata) {
     }
 }
 
+ROMMemManager *ROMMapper2::save_state() {
+    ROMMapper2 *cloned = new ROMMapper2();
+    cloned->PRG_ROM_SIZE = PRG_ROM_SIZE;
+    cloned->PRG_ROM_DATA = PRG_ROM_DATA;
+    cloned->PRG_ROM_RESOLUTION[0] = PRG_ROM_RESOLUTION[0];
+    cloned->PRG_ROM_RESOLUTION[1] = PRG_ROM_RESOLUTION[1];
+    // now the pt
+    for(int ptable=0; ptable<2; ptable++) {
+        for(int i=0; i<4096; i++) {
+            cloned->pt[ptable][i] = pt[ptable][i];
+        }
+    }
+    return cloned;
+}
+
 void ROMMapper2::write(MEMADDR a, UINT8 val) {
     // I think it doesn't matter where we write ?
 
     UINT8 new_latch = val & 0x07; // we take the last 3 bits
     if(new_latch >= PRG_ROM_SIZE / 0x4000) {
-        std::printf("Trying to bankswitch past to the end of rom ?\n");
+        std::printf("Trying to bankswitch past the end of rom ?\n");
         new_latch = (PRG_ROM_SIZE / 0X4000) - 1;
     }
 

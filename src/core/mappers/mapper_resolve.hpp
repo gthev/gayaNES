@@ -17,10 +17,13 @@ Mapper 2, or UNROM
 class ROMMapper2 : public ROMDefault
 {
 public:
+    ROMMapper2(){};
     ROMMapper2(struct nes_data *nesdata);
     virtual ~ROMMapper2(){};
     virtual void        write(MEMADDR a, UINT8 val);
     virtual void        write_pt(MEMADDR a, UINT8 val);
+    virtual ROMMemManager
+                        *save_state();
 };
 
 /*
